@@ -17,7 +17,10 @@ logging.basicConfig(level=logging.INFO)
 user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Пришли текст поста первым сообщением, а потом изображения с правками. Когда будешь готова — отправь команду /generate для запуска обработки.")
+    await update.message.reply_text(
+        "Привет! Пришли текст поста первым сообщением, а потом изображения с правками. "
+        "Когда будешь готова — отправь команду /generate для запуска обработки."
+    )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -47,17 +50,18 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = user_data[user_id]['post']
     images = user_data[user_id]['images']
 
-   content = [
-    {
-        "type": "text",
-        "text": f"""Ты — редактор. Твоя задача — переписать предложенный текст так, чтобы он звучал живо, понятно и вовлекал читателя. Изображения содержат пометки с замечаниями и правками. Используй их как подсказки. Не пиши ничего лишнего — просто верни исправленный пост.
-
-Вот текст поста:
-
-{post}
-"""
-    }
-]
+    content = [
+        {
+            "type": "text",
+            "text": (
+                "Ты — редактор. Твоя задача — переписать предложенный текст так, чтобы он звучал живо, "
+                "понятно и вовлекал читателя. Изображения содержат пометки с замечаниями и правками. "
+                "Используй их как подсказки. Не пиши ничего лишнего — просто верни исправленный пост.\n\n"
+                "Вот текст поста:\n\n"
+                f"{post}"
+            )
+        }
+    ]
 
     for path in images:
         with open(path, "rb") as image_file:
