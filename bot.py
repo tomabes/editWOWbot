@@ -4,6 +4,7 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -51,7 +52,7 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Authorization": f"Bearer {PUTER_API_KEY}",
     }
 
-    payload = {
+    multipart_data = {
         "model": "claude-3-sonnet",
         "messages": [
             {
@@ -67,9 +68,8 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = requests.post(
         "https://api.puter.com/chat/completions",
-        headers=headers,
-        data={"data": str(payload)},
-        files=files
+        headers={"Authorization": f"Bearer {PUTER_API_KEY}"},
+        files=files + [('payload', (None, json.dumps(multipart_data), 'application/json'))]
     )
 
     for path in images:
