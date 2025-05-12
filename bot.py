@@ -4,6 +4,7 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
+import anthropic
 
 load_dotenv()
 
@@ -45,16 +46,12 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = user_data[user_id]['post']
     images = user_data[user_id]['images']
 
-    files = []
     image_texts = []
 
-    # Сохраняем изображения и собираем base64 (или просто упрощаем)
     for path in images:
-        with open(path, "rb") as f:
-            image_texts.append(f"[Image {os.path.basename(path)} attached — user made comments here]")
+        image_texts.append(f"[Image {os.path.basename(path)} attached — user made comments here]")
         os.remove(path)
 
-    # Создаём текстовый контекст
     full_prompt = f"""Ты — редактор. Пользователь присылает текст поста и скрины с правками.
 Вот текст поста:
 
@@ -66,36 +63,23 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Отредактируй текст поста, учтя замечания. Верни только исправленный текст.
 """
 
-    # Anthropic API
-    headers = {
-        "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-    }
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    payload = {
-        "model": "claude-3-sonnet-20240229",
-        "max_tokens": 1024,
-        "temperature": 0.7,
-        "messages": [
-            {"role": "user", "content": full_prompt}
-        ]
-    }
-
-    response = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers=headers,
-        json=payload
-    )
+    try:
+        message = client.messages.create(
+            model="claude-3-7-sonnet-20250219",
+            max_tokens=1024,
+            temperature=0.7,
+            messages=[
+                {"role": "user", "content": full_prompt}
+            ]
+        )
+        reply = message.content[0].text
+        await update.message.reply_text(reply)
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при обращении к Anthropic:\n{e}")
 
     user_data.pop(user_id)
-
-    if response.status_code == 200:
-        result = response.json()
-        reply = result['content'][0]['text']
-        await update.message.reply_text(reply)
-    else:
-        await update.message.reply_text("Ошибка при обращении к Anthropic API.")
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
