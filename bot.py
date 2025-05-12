@@ -1,15 +1,14 @@
 import os
 import logging
-import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-import anthropic
+from together import Together
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,10 +45,9 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = user_data[user_id]['post']
     images = user_data[user_id]['images']
 
-    image_texts = []
+    image_texts = [f"Скриншот: {os.path.basename(path)} — правки на этом изображении." for path in images]
 
     for path in images:
-        image_texts.append(f"[Image {os.path.basename(path)} attached — user made comments here]")
         os.remove(path)
 
     full_prompt = f"""Ты — редактор. Пользователь присылает текст поста и скрины с правками.
@@ -63,21 +61,17 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Отредактируй текст поста, учтя замечания. Верни только исправленный текст.
 """
 
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = Together(api_key=TOGETHER_API_KEY)
 
     try:
-        message = client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=1024,
-            temperature=0.7,
-            messages=[
-                {"role": "user", "content": full_prompt}
-            ]
+        response = client.chat.completions.create(
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            messages=[{"role": "user", "content": full_prompt}]
         )
-        reply = message.content[0].text
+        reply = response.choices[0].message.content
         await update.message.reply_text(reply)
     except Exception as e:
-        await update.message.reply_text(f"Ошибка при обращении к Anthropic:\n{e}")
+        await update.message.reply_text(f"Ошибка при обращении к Together API:\n{e}")
 
     user_data.pop(user_id)
 
