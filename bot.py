@@ -1,15 +1,17 @@
 import os
 import logging
+import base64
+import openai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from together import Together
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+openai.api_key = OPENAI_API_KEY
 logging.basicConfig(level=logging.INFO)
 
 user_data = {}
@@ -39,39 +41,43 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in user_data:
-        await update.message.reply_text("Нет текста и скриншотов.")
+        await update.message.reply_text("Нет текста и скринов.")
         return
 
     post = user_data[user_id]['post']
     images = user_data[user_id]['images']
 
-    image_texts = [f"Скриншот: {os.path.basename(path)} — правки на этом изображении." for path in images]
+    content = [
+        {"type": "text", "text": f"Ты — редактор. Пользователь присылает текст поста и скрины с правками.\nВот текст поста:\n\n{post}\n\nВот правки на изображениях. Прими их во внимание и верни только исправленный текст."}
+    ]
 
     for path in images:
+        with open(path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+            image_data = {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{base64_image}"
+                }
+            }
+            content.append(image_data)
         os.remove(path)
 
-    full_prompt = f"""Ты — редактор. Пользователь присылает текст поста и скрины с правками.
-Вот текст поста:
-
-{post}
-
-Вот правки, сделанные пользователем на изображениях:
-{chr(10).join(image_texts)}
-
-Отредактируй текст поста, учтя замечания. Верни только исправленный текст.
-"""
-
-    client = Together(api_key=TOGETHER_API_KEY)
-
     try:
-        response = client.chat.completions.create(
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-            messages=[{"role": "user", "content": full_prompt}]
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            max_tokens=1500
         )
         reply = response.choices[0].message.content
         await update.message.reply_text(reply)
     except Exception as e:
-        await update.message.reply_text(f"Ошибка при обращении к Together API:\n{e}")
+        await update.message.reply_text(f"Ошибка при обращении к OpenAI API:\n{e}")
 
     user_data.pop(user_id)
 
