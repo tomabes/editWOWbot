@@ -4,12 +4,11 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from dotenv import load_dotenv
-import json
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-PUTER_API_KEY = os.getenv("PUTER_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,43 +45,57 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post = user_data[user_id]['post']
     images = user_data[user_id]['images']
 
-    files = [("files", (os.path.basename(p), open(p, "rb"))) for p in images]
+    files = []
+    image_texts = []
 
+    # Сохраняем изображения и собираем base64 (или просто упрощаем)
+    for path in images:
+        with open(path, "rb") as f:
+            image_texts.append(f"[Image {os.path.basename(path)} attached — user made comments here]")
+        os.remove(path)
+
+    # Создаём текстовый контекст
+    full_prompt = f"""Ты — редактор. Пользователь присылает текст поста и скрины с правками.
+Вот текст поста:
+
+{post}
+
+Вот правки, сделанные пользователем на изображениях:
+{chr(10).join(image_texts)}
+
+Отредактируй текст поста, учтя замечания. Верни только исправленный текст.
+"""
+
+    # Anthropic API
     headers = {
-        "Authorization": f"Bearer {PUTER_API_KEY}",
+        "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
     }
 
-    multipart_data = {
-        "model": "claude-3-sonnet",
+    payload = {
+        "model": "claude-3-sonnet-20240229",
+        "max_tokens": 1024,
+        "temperature": 0.7,
         "messages": [
-            {
-                "role": "system",
-                "content": "Ты — редактор. Пользователь присылает текст поста и скрины с правками. Исправь текст в соответствии с изображениями. Отправь только исправленный текст."
-            },
-            {
-                "role": "user",
-                "content": f"Вот текст поста:\n\n{post}\n\nПравки на изображениях."
-            }
+            {"role": "user", "content": full_prompt}
         ]
     }
 
     response = requests.post(
-        "https://api.puter.com/chat/completions",
-        headers={"Authorization": f"Bearer {PUTER_API_KEY}"},
-        files=files + [('payload', (None, json.dumps(multipart_data), 'application/json'))]
+        "https://api.anthropic.com/v1/messages",
+        headers=headers,
+        json=payload
     )
-
-    for path in images:
-        os.remove(path)
 
     user_data.pop(user_id)
 
     if response.status_code == 200:
         result = response.json()
-        reply = result['choices'][0]['message']['content']
+        reply = result['content'][0]['text']
         await update.message.reply_text(reply)
     else:
-        await update.message.reply_text("Ошибка при обращении к Claude. Проверь API ключ или формат запроса.")
+        await update.message.reply_text("Ошибка при обращении к Anthropic API.")
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
